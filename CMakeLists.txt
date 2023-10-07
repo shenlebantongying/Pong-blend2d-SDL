@@ -10,7 +10,7 @@ include("${CMAKE_SOURCE_DIR}/blend2d/CMakeLists.txt")
 
 configure_file(${CMAKE_SOURCE_DIR}/IntelOneMono.ttf ${CMAKE_BINARY_DIR}/IntelOneMono.ttf COPYONLY)
 
-add_executable(blend2d_pong src/main.cpp)
+add_executable(blend2d_pong pong/main.cpp)
 
 set_target_properties(blend2d_pong PROPERTIES COMPILE_WARNING_AS_ERROR ON)
 

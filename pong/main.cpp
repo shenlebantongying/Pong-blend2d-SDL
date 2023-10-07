@@ -1,9 +1,6 @@
 #include <SDL.h>
 #include <blend2d.h>
 
-const int width = 600;
-const int height = 500;
-
 struct ball {
     BLCircle c;
     double vX;
@@ -49,8 +46,11 @@ public:
 
     SDL_Window* window;
     SDL_Renderer* renderer;
-    SDL_Texture* texture;
-    BLImage blSurface;
+    SDL_Texture* displayTexture;
+    SDL_Texture* scoreTexture;
+
+    BLImage displaySurface;
+    BLImage scoreSurface;
 
     bool quitting = false;
 
@@ -60,12 +60,22 @@ public:
 
     int mouseX = 0;
 
+    int displayWidth = 600;
+    int displayHeight = 500;
+
+    int scoreWidth = 200;
+    int scoreHeight = displayHeight;
+
+    SDL_Rect displayRect = { 0, 0, displayWidth, displayHeight };
+    SDL_Rect scoreRect = { displayWidth, 0, scoreWidth, scoreHeight };
     pongGame() noexcept
         : score(0)
         , window(nullptr)
         , renderer(nullptr)
-        , texture(nullptr)
-        , blSurface()
+        , displayTexture(nullptr)
+        , scoreTexture(nullptr)
+        , displaySurface()
+        , scoreSurface()
     {
 
         BLFontFace face;
@@ -73,7 +83,7 @@ public:
         face.createFromFile("IntelOneMono.ttf");
         font.createFromFace(face, 20.f);
 
-        paddle = { .rect = BLRectI(mouseX, height - 40, 200, 20) };
+        paddle = { .rect = BLRectI(mouseX, displayHeight - 40, 200, 20) };
         ball = { .c = BLCircle(100.0, 100.0, 20.0),
             .vX = 1,
             .vY = 1,
@@ -83,9 +93,8 @@ public:
 
     ~pongGame() noexcept { destroyWindow(); }
 
-    bool createWindow(int w, int h) noexcept
+    bool createWindow() noexcept
     {
-
         if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_TIMER) != 0) {
             printf("Failed to initialize SDL: %s", SDL_GetError());
             return false;
@@ -93,7 +102,7 @@ public:
 
         SDL_ShowCursor(SDL_DISABLE);
 
-        window = SDL_CreateWindow("SDL Window", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, w, h, SDL_WINDOW_SHOWN);
+        window = SDL_CreateWindow("SDL Window", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, displayWidth + scoreWidth, displayHeight, SDL_WINDOW_SHOWN);
         if (!window)
             return false;
 
@@ -105,32 +114,66 @@ public:
         }
         SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 
-        if (!createSurface(w, h)) {
-            destroyWindow();
+        if (!createDisplaySurface()) {
+            printf("Failed to create displaySurface");
+            return false;
+        }
+
+        if (!createScoreSurface()) {
+            printf("Failed to create scoreSurface");
             return false;
         }
 
         return true;
     }
 
-    bool createSurface(int w, int h) noexcept
+    void destroySurfaces() noexcept
     {
-        destroySurface();
+        if (displayTexture) {
+            SDL_DestroyTexture(displayTexture);
+            displayTexture = nullptr;
+        }
 
-        texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, w, h);
-        if (!texture)
+        if (scoreTexture) {
+            SDL_DestroyTexture(scoreTexture);
+            scoreTexture = nullptr;
+        }
+
+        displaySurface.reset();
+        scoreSurface.reset();
+    }
+
+    bool createDisplaySurface() noexcept
+    {
+        destroySurfaces();
+
+        displayTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, displayWidth, displayHeight);
+        if (!displayTexture)
             return false;
-        SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_NONE);
+        SDL_SetTextureBlendMode(displayTexture, SDL_BLENDMODE_NONE);
 
-        if (blSurface.create(w, h, BL_FORMAT_PRGB32) != BL_SUCCESS)
+        if (displaySurface.create(displayWidth, displayHeight, BL_FORMAT_PRGB32) != BL_SUCCESS)
             return false;
 
         return true;
     }
 
+    bool createScoreSurface() noexcept
+    {
+        scoreTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, scoreWidth, scoreHeight);
+        if (!scoreTexture)
+            return false;
+        SDL_SetTextureBlendMode(scoreTexture, SDL_BLENDMODE_NONE);
+
+        if (scoreSurface.create(scoreWidth, scoreHeight, BL_FORMAT_PRGB32) != BL_SUCCESS)
+            return false;
+
+        return true;
+    };
+
     void destroyWindow() noexcept
     {
-        destroySurface();
+        destroySurfaces();
 
         if (renderer) {
             SDL_DestroyRenderer(renderer);
@@ -141,16 +184,6 @@ public:
             SDL_DestroyWindow(window);
             window = nullptr;
         }
-    }
-
-    void destroySurface() noexcept
-    {
-        if (texture) {
-            SDL_DestroyTexture(texture);
-            texture = nullptr;
-        }
-
-        blSurface.reset();
     }
 
     int run() noexcept
@@ -200,7 +233,7 @@ public:
             ball.move();
             paddle.setX(mouseX);
 
-            if (ball.c.cx > width or ball.c.cx <= 0) {
+            if (ball.c.cx > displayWidth or ball.c.cx <= 0) {
                 ball.reverseX();
             } else if (ball.c.cy < 0) {
                 ball.reverseY();
@@ -213,7 +246,7 @@ public:
                 ball.c.cy = paddle.rect.y - ball.c.r;
                 ball.reverseY();
                 score += 1;
-            } else if (ball.c.cy + ball.c.r > height) {
+            } else if (ball.c.cy + ball.c.r > displayHeight) {
                 score = -1;
             }
 
@@ -226,7 +259,7 @@ public:
 
     void render() noexcept
     {
-        BLContext ctx(blSurface);
+        BLContext ctx(displaySurface);
 
         ctx.setFillStyle(BLRgba32(0xFFFFFFFFu));
         ctx.fillAll();
@@ -239,29 +272,41 @@ public:
         ctx.setFillStyle(BLRgba32(0xFF8d17adu));
         ctx.fillCircle(ball.c);
 
+        BLContext scoreCtx(scoreSurface);
+
         char fpsBuf[128];
         snprintf(fpsBuf, 128, "FPS: %.2f", fps);
 
         char scoreBuf[128];
         if (score < 0) {
             snprintf(scoreBuf, 128, "You failed.");
-
         } else {
             snprintf(scoreBuf, 128, "Score: %.2d", score);
         }
 
-        ctx.setFillStyle(BLRgba32(0xFFFF0000u));
-        ctx.fillUtf8Text(BLPoint(2, 20), font, fpsBuf);
-        ctx.fillUtf8Text(BLPoint(2, 50), font, scoreBuf);
+        scoreCtx.setFillStyle(BLRgba32(0xFF00FF00u));
+        scoreCtx.fillAll();
+
+        scoreCtx.setFillStyle(BLRgba32(0xFFFF0000u));
+        scoreCtx.setFillRule(BL_FILL_RULE_EVEN_ODD);
+
+        scoreCtx.fillUtf8Text(BLPoint(2, 20), font, fpsBuf);
+        scoreCtx.fillUtf8Text(BLPoint(2, 50), font, scoreBuf);
     }
 
     void blit() const noexcept
     {
-        BLImageData data {};
-        blSurface.getData(&data);
+        BLImageData displayData {};
+        BLImageData scoreData {};
 
-        SDL_UpdateTexture(texture, nullptr, data.pixelData, int(data.stride));
-        SDL_RenderCopy(renderer, texture, nullptr, nullptr);
+        displaySurface.getData(&displayData);
+        scoreSurface.getData(&scoreData);
+
+        SDL_UpdateTexture(displayTexture, nullptr, displayData.pixelData, int(displayData.stride));
+        SDL_UpdateTexture(scoreTexture, nullptr, scoreData.pixelData, int(scoreData.stride));
+        SDL_RenderCopy(renderer, displayTexture, nullptr, &displayRect);
+        SDL_RenderCopy(renderer, scoreTexture, nullptr, &scoreRect);
+
         SDL_RenderPresent(renderer);
     }
 };
@@ -270,7 +315,7 @@ int main()
 {
     pongGame app;
 
-    if (!app.createWindow(width, height)) {
+    if (!app.createWindow()) {
         return 1;
     }
 
